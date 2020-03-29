@@ -93,5 +93,5 @@ main(int argc, char** argv) {
 
 void
 printusage() {
-	fprintf(stderr, "keyboardcolour [IMAGES...]\n");
+	fprintf(stderr, "keyboardcolour <COLOURS...>\n");
 }
