@@ -1,93 +1,98 @@
 #include <libcmmk/libcmmk.h>
 
-#include <unistd.h> /* usleep() */
-#include <signal.h>
-#include <time.h> /* do we need this? */
-
-#include <string.h> /* memset() */
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 
+void printusage();
+
 void
-multilayer(struct cmmk *dev) {
-	struct cmmk_effect_matrix map = {0};
+setkeyboardcols(struct cmmk *dev, long int *cols, int colSize) {
+	struct cmmk_color_matrix map = {0};
 
-	struct cmmk_effect_fully_lit f = {
-		.color = MKRGB(0x404040)
-	};
+	for(int i=0;i<colSize;i++) {
+		for(int j=0;j<CMMK_COLS_MAX/colSize;j++) {
+			int index = i*CMMK_COLS_MAX/colSize+j;
+			for(int y=0;y<CMMK_ROWS_MAX;y++) {
+				map.data[y][index] = MKRGB(cols[i]);
+			}
+		}
+	}
 
-	struct cmmk_effect_wave w = {
-		.speed = 0x50,
-		.direction = CMMK_LEFT_TO_RIGHT,
-		.start = MKRGB(0xffffff)
-	};
-
-	struct cmmk_effect_raindrops r = {
-		.speed = 0x20,
-		.interval = 0x30,
-		.active = MKRGB(0xffffff),
-		.rest = MKRGB(0x000000)
-	};
-
-	map.data[0][0] = CMMK_EFFECT_WAVE;
-	map.data[4][16] = CMMK_EFFECT_WAVE;
-	map.data[5][15] = CMMK_EFFECT_WAVE;
-	map.data[5][16] = CMMK_EFFECT_WAVE;
-	map.data[5][17] = CMMK_EFFECT_WAVE;
-
-	memset(&map.data[1], CMMK_EFFECT_RAINDROPS, 15);
-	memset(&map.data[2], CMMK_EFFECT_RAINDROPS, 15);
-	memset(&map.data[3], CMMK_EFFECT_RAINDROPS, 15);
-	memset(&map.data[4], CMMK_EFFECT_RAINDROPS, 15);
-	memset(&map.data[5], CMMK_EFFECT_RAINDROPS, 15);
-
-	cmmk_set_control_mode(dev, CMMK_EFFECT);
-
-	cmmk_switch_multilayer(dev, 1);
-	cmmk_set_effect_fully_lit(dev, &f);
-	cmmk_set_effect_wave(dev, &w);
-	cmmk_set_effect_raindrops(dev, &r);
-	cmmk_switch_multilayer(dev, 0);
-
-	cmmk_set_multilayer_map(dev, &map);
-	cmmk_set_active_effect(dev, CMMK_EFFECT_MULTILAYER);
+	cmmk_set_customized_leds(dev, &map);
 }
 
+void
+detach(struct cmmk *dev) {
+	cmmk_set_control_mode(dev, CMMK_FIRMWARE);
+	cmmk_detach(dev);
+}
 
-//TODO: commandline arguments
-int main(int argc, char** argv) {
-	struct cmmk state;
+void
+saveprofile(struct cmmk *dev) {
+	cmmk_set_control_mode(dev, CMMK_PROFILE_CUSTOMIZATION);
+	cmmk_set_active_profile(dev, 3);
+	cmmk_save_active_profile(dev);
+}
 
+void
+brighten(long int *col) {
+	uint8_t r = (*col >> 16)&0xff;
+	uint8_t g = (*col >> 8)&0xff;
+	uint8_t b = *col & 0xff;
+
+	uint8_t max = fmax(fmax(r, g), b);
+	float amt = 255.0 / max;
+
+
+	r=fmax(fmin(r*amt, 255),0);
+	g=fmax(fmin(g*amt, 255),0);
+	b=fmax(fmin(b*amt, 255),0);
+
+	*col = (r<<16)|(g<<8)|b;
+}
+
+int
+main(int argc, char** argv) {
+	struct cmmk dev;
 	int product;
 
+	if (argc == 1) {
+		printusage();
+		return 1;
+	}
+
 	if (cmmk_find_device(&product) != 0) {
+		fprintf(stderr, "Can't find device\n");
 		return 1;
 	}
 
-	if (cmmk_attach(&state, product, CMMK_LAYOUT_US_S) != 0) {
+	if (cmmk_attach(&dev, product, CMMK_LAYOUT_US_S) != 0) {
+		fprintf(stderr, "Can't attach device\n");
 		return 1;
 	}
 
-	struct cmmk_effect_stars r = {
-		.speed = 0x30,
-		.interval = 0x10,
+	long int *cols = malloc(sizeof(long int) * (argc-1));
 
-		.active = MKRGB(0xffffff),
-		.rest = MKRGB(0x0)
-	};
+	for(int i = 0;i<argc-1;i++) {
+		cols[i] = strtol(argv[i+1], 0, 0);
+		brighten(cols+i);
+	}
 
+	cmmk_set_control_mode(&dev, CMMK_EFFECT);
+	cmmk_set_active_effect(&dev, CMMK_EFFECT_CUSTOMIZED);
 
-	cmmk_set_control_mode(&state, CMMK_EFFECT);
-	cmmk_set_effect_stars(&state, &r);
+	setkeyboardcols(&dev, cols, argc-1);
 
-	cmmk_set_active_effect(&state, CMMK_EFFECT_STARS);
+	saveprofile(&dev);
+	detach(&dev);
 
-	cmmk_set_control_mode(&state, CMMK_PROFILE_CUSTOMIZATION);
-	cmmk_save_active_profile(&state);
-
-	cmmk_set_control_mode(&state, CMMK_FIRMWARE);
-
-	cmmk_detach(&state);
+	free(cols);
 
 	return 0;
+}
+
+void
+printusage() {
+	fprintf(stderr, "keyboardcolour [IMAGES...]\n");
 }
