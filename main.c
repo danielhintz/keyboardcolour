@@ -31,7 +31,6 @@ detach(struct cmmk *dev) {
 void
 saveprofile(struct cmmk *dev) {
 	cmmk_set_control_mode(dev, CMMK_PROFILE_CUSTOMIZATION);
-	cmmk_set_active_profile(dev, 3);
 	cmmk_save_active_profile(dev);
 }
 
